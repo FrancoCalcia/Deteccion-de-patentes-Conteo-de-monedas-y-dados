@@ -151,6 +151,63 @@ def encontrar_patentes(img_bin, img, rect_min_size=(42, 11), rect_max_size=(103,
 
     return posibles_patentes
 
+
+def encontrar_patentes_04(img_bin, img, rect_min_size=(30, 15), rect_max_size=(600, 600), show_result=True):
+    """
+    Detecta regiones de posibles patentes en la imagen binaria y las recorta.
+
+    Args:
+        img_bin (numpy.ndarray): Imagen binaria después del preprocesamiento.
+        img (numpy.ndarray): Imagen original en color.
+        rect_min_size (tuple): Dimensiones mínimas del rectángulo.
+        rect_max_size (tuple): Dimensiones máximas del rectángulo.
+        epsilon_factor (float): Factor para aproximación de polígonos.
+        show_result (bool): Si se debe mostrar la imagen con las patentes detectadas.
+
+    Returns:
+        list: Lista de imágenes de posibles patentes recortadas.
+    """
+    # Unir contornos cercanos mediante una operación morfológica de cierre
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 30))  # Ajusta el tamaño del kernel según tus necesidades
+    img_closed = cv2.morphologyEx(img_bin, cv2.MORPH_CLOSE, kernel)
+
+    # Encontrar contornos externos en la imagen "cerrada"
+    ext_contours, _ = cv2.findContours(img_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    posibles_patentes = []  # Lista para almacenar las posibles patentes
+    img_out = img.copy()  # Copia de la imagen original para visualizar resultados
+
+    # Obtener las dimensiones de la imagen
+    height, width = img.shape[:2]
+
+    for contour in ext_contours:
+        # Verificar si el polígono tiene 4 lados y cumple con las dimensiones esperadas
+        x, y, w, h = cv2.boundingRect(contour)
+
+        if (rect_min_size[0] <= w <= rect_max_size[0] and
+            rect_min_size[1] <= h <= rect_max_size[1]):
+            # Calcular un margen alrededor de la patente
+            margin_x = int(w * 0.2)  # Margen horizontal
+            margin_y = int(h * 0.5)  # Margen vertical
+
+            # Ajustar los límites del rectángulo considerando el margen
+            x_start = max(0, x - margin_x)
+            x_end = min(width, x + w + margin_x)
+            y_start = max(0, y - margin_y)
+            y_end = min(height, y + h + margin_y)
+
+            # Recortar la región correspondiente a la posible patente
+            patente = img[y_start:y_end, x_start:x_end]
+            posibles_patentes.append(patente)  # Agregar a la lista
+
+            # Dibujar el contorno en la imagen original
+            cv2.drawContours(img_out, [contour], -1, (0, 255, 0), 2)
+
+    if show_result:
+        imshow(img_out, title="Patentes detectadas", color_img=True)
+
+    return posibles_patentes
+
+
 # Función para recortar la primera patente detectada de una lista de posibles patentes
 def recortar_primer_patente(posibles_patentes):
     """
@@ -225,7 +282,7 @@ def procesar_patente(gris):
     # Iterar sobre cada componente conectado (excepto el fondo)
     for i in range(1, num_labels):  # La etiqueta 0 es el fondo
         x, y, w, h, area = stats[i]
-        if 10 < area < 160:  # Ajustar el filtro según el tamaño esperado de las letras
+        if 16 < area < 125:  # Ajustar el filtro según el tamaño esperado de las letras
             letra = patente_bin[y:y+h, x:x+w]
             letras.append((x, letra, area))  # Guardar la letra y su área
 
@@ -243,7 +300,10 @@ def main():
     """
     # Lista de identificadores de las imágenes
     ids = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
-
+    
+    global imagen_a_reevaluar  # Lista para guardar imágenes no detectadas
+    imagen_a_reevaluar = [] 
+    
     for id in ids:
         img_path = f"archivos/img{id}.png"  # Ruta de la imagen
         img = cv2.imread(img_path)  # Cargar la imagen
@@ -267,7 +327,15 @@ def main():
 
         # Detectar posibles patentes en la imagen refinada
         posibles_patentes = encontrar_patentes(img_open, img)
-        print(f"Se encontraron {len(posibles_patentes)} posibles patentes.")
+        if len(posibles_patentes) == 0:
+            print("No se encontraron posibles patentes. Guardando la imagen para reevaluar...")
+            # Guarda la imagen original para reevaluarla
+            nombre_archivo = f"archivos/img{id}_no_detectada.png"
+            cv2.imwrite(nombre_archivo, img)
+            print(f"Imagen guardada como: {nombre_archivo}")
+            imagen_a_reevaluar.append(nombre_archivo)
+        else:
+            print(f"Se encontraron {len(posibles_patentes)} posibles patentes.")
 
         # Si se detectaron patentes, procesar la primera patente
         if posibles_patentes:
@@ -285,7 +353,69 @@ def main():
             # Mostrar y dilatar las letras encontradas
             for i, (letra, area) in enumerate(letras_recortadas):
                 print(f"Letra {i + 1}: Área = {area}")
-                if 13 <= area <= 139:  # Validar el área de la letra
+                if 16 < area < 125:  # Validar el área de la letra
+                    # Aplicar dilatación para mejorar la visibilidad de la letra
+                    kernel = np.ones((2, 1), np.uint8)
+                    letra_dilatada = cv2.dilate(letra, kernel, iterations=1)
+                    imshow(letra_dilatada, title=f"Letra {i + 1}")
+                else:
+                    print(f"Letra {i + 1}: Área no válida ({area}).")
+    
+def reevaluar_imagen(imagenes_no_detectadas):
+    """
+    Reevaluar las imágenes no detectadas previamente, usando parámetros ajustados.
+    """
+    for img_path in imagenes_no_detectadas:
+        img = cv2.imread(img_path)  # Cargar la imagen
+        if img is None:
+            print(f"Error: No se pudo cargar la imagen desde '{img_path}'")
+            continue
+        
+        # Mostrar la imagen original
+        imshow(img, title="Imagen original", color_img=True)
+
+        # Preprocesar la imagen
+        img_close = preprocesar_imagen(img, threshold=63, canny_min=200, canny_max=350, kernel_size=(4, 3), iterations=2)
+
+        # Filtrar componentes conectadas según el área
+        filtered_img = filtrar_componentes_conectadas(img_close)
+
+        # Refinar la imagen con una operación de apertura
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 4))
+        img_open = cv2.morphologyEx(filtered_img, cv2.MORPH_OPEN, kernel, iterations=3)
+        imshow(img_open, title="Refinamiento: Apertura")
+
+        # Aplicar operación morfológica de cierre
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 30))
+        img_close = cv2.morphologyEx(img_open, cv2.MORPH_CLOSE, kernel, iterations=9)
+        imshow(img_close, title="Refinamiento: Clausura")
+             
+        # Detectar posibles patentes en la imagen refinada
+        posibles_patentes = encontrar_patentes_04(img_open, img)
+        print(f"Se encontraron {len(posibles_patentes)} posibles patentes.")
+
+        if len(posibles_patentes) == 0:
+            print("No se encontraron posibles patentes.")
+        else:    
+          print(f"Se encontraron {len(posibles_patentes)} posibles patentes.")
+
+        # Si se detectaron patentes, procesar la primera patente
+        if posibles_patentes:
+            primera_patente = posibles_patentes[0]  # Obtener la primera patente detectada
+            imshow(primera_patente, title="Patente a color RGB")
+
+            # Convertir la patente a escala de grises y mostrarla
+            primera_patente_gray = cv2.cvtColor(primera_patente, cv2.COLOR_BGR2GRAY)
+            imshow(primera_patente_gray, title="Patente recortada en blanco y negro")
+
+            # Procesar las letras de la patente
+            letras_recortadas = procesar_patente(primera_patente_gray)
+            print(f"Se encontraron {len(letras_recortadas)} letras en la primera patente.")
+
+            # Mostrar y dilatar las letras encontradas
+            for i, (letra, area) in enumerate(letras_recortadas):
+                print(f"Letra {i + 1}: Área = {area}")
+                if 16 < area < 125:  # Validar el área de la letra
                     # Aplicar dilatación para mejorar la visibilidad de la letra
                     kernel = np.ones((2, 1), np.uint8)
                     letra_dilatada = cv2.dilate(letra, kernel, iterations=1)
@@ -296,3 +426,6 @@ def main():
 # Ejecutar la función principal
 if __name__ == "__main__":
     main()
+    if len(imagen_a_reevaluar) != 0:
+      reevaluar_imagen(imagen_a_reevaluar)
+      
