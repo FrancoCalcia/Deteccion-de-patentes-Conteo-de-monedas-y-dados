@@ -40,6 +40,7 @@ El script **`plate.py`** trabaja con un conjunto de imágenes de vehículos (`im
 
 Antes de ejecutar los scripts, asegúrate de tener los siguientes elementos instalados en tu sistema:
 - **Python 3.8 o superior**
+- Docker
 - Librerías listadas en `requirements.txt` (ver Instrucciones de Configuración).
 
 O utiliza Docker para ejecutar el proyecto en un entorno aislado.
@@ -48,21 +49,21 @@ O utiliza Docker para ejecutar el proyecto en un entorno aislado.
 
 ## **Instrucciones de configuración**
 
-### Opción 1: Configuración manual
+### Clona el repositorio en la carpeta que elijas.
 
-1. **Clona el repositorio**:
    ```bash
-   git clone https://github.com/usuario/trabajo-practico-2.git
-   cd trabajo-practico-2
+   git clone https://github.com/FrancoCalcia/PDI1-TP2-TUIA-Avecilla-Calcia.git
+   cd PDI1-TP2-TUIA-Avecilla-Calcia
    ```
 
-2. **Instala las dependencias**:
+### Opción 1: Configuración manual
+1. **Instala las dependencias**:
    Asegúrate de estar en un entorno virtual (opcional pero recomendado) y ejecuta:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Ejecución de los scripts**:
+2. **Ejecución de los scripts**:
    - Para el problema 1 (monedas y dados):
      ```bash
      python monedas_dados.py
