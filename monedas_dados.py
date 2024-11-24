@@ -2,239 +2,160 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
-def cargar_imagen(image_path):
-    """Carga una imagen desde una ruta proporcionada."""
-    return cv2.imread(image_path)
-
-def convertir_a_grises(image):
-    """Convierte una imagen a escala de grises si no está ya en escala de grises."""
-    if len(image.shape) == 3 and image.shape[2] == 3:  # Verifica si la imagen tiene 3 canales
-        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return image  # Retorna la imagen sin cambios si ya está en escala de grises
-
-
-def aplicar_desenfoque(image, kernel_size=(5, 5)):
-    """Aplica un desenfoque Gaussiano a la imagen."""
-    return cv2.GaussianBlur(image, kernel_size, 0)
-
-def detectar_bordes(image, low_threshold=80, high_threshold=180):
-    """Detecta bordes en una imagen utilizando el algoritmo de Canny."""
-    return cv2.Canny(image, low_threshold, high_threshold)
-
-def dilatar_bordes(image, iterations=15):
-    """Dilata los bordes para unir fragmentos cercanos."""
-    return cv2.dilate(image, None, iterations=iterations)
-
-def mostrar_imagenes(image_original, gray_image, edges):
-    """Muestra la imagen original, en escala de grises y los bordes detectados."""
-    fig, ax = plt.subplots(1, 3, figsize=(15, 5))
-    ax[0].imshow(cv2.cvtColor(image_original, cv2.COLOR_BGR2RGB))
-    ax[0].set_title("Imagen Original")
-    ax[0].axis("off")
-
-    ax[1].imshow(gray_image, cmap='gray')
-    ax[1].set_title("Imagen en Escala de Grises")
-    ax[1].axis("off")
-
-    ax[2].imshow(edges, cmap='gray')
-    ax[2].set_title("Bordes Detectados (Canny)")
-    ax[2].axis("off")
-
-    plt.tight_layout()
-    plt.show()
-
-def detectar_contornos(image):
-    """Encuentra contornos en la imagen y devuelve la lista de contornos."""
-    contours, _ = cv2.findContours(image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    return contours
-
-def dibujar_contornos(image, contours):
-    """Dibuja los contornos detectados sobre una copia de la imagen original."""
-    contour_image = image.copy()
-    cv2.drawContours(contour_image, contours, -1, (0, 255, 0), 2)
-    return contour_image
-
-def mostrar_contornos(contour_image):
-    """Muestra la imagen con los contornos dibujados."""
-    plt.figure(figsize=(10, 10))
-    plt.imshow(cv2.cvtColor(contour_image, cv2.COLOR_BGR2RGB))
-    plt.title("Contornos Detectados")
+# Funciones auxiliares
+def mostrar_imagen(img, titulo, cmap=None):
+    """Muestra una imagen con título."""
+    plt.figure(figsize=(8, 8))
+    plt.imshow(img, cmap=cmap)
+    plt.title(titulo)
     plt.axis("off")
     plt.show()
 
-def recortar_contornos(image, contours):
-    """Recorta cada contorno detectado y guarda los recortes en una lista."""
+def mostrar_imagenes(imagenes, titulos, cmap=None):
+    """Muestra varias imágenes en una misma fila."""
+    n = len(imagenes)
+    fig, axes = plt.subplots(1, n, figsize=(5 * n, 5))
+    if n == 1:
+        axes = [axes]
+    for ax, img, titulo in zip(axes, imagenes, titulos):
+        ax.imshow(img, cmap=cmap)
+        ax.set_title(titulo)
+        ax.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+# Cargar y preprocesar la imagen
+def cargar_imagen(ruta):
+    imagen = cv2.imread(ruta)
+    gris = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
+    desenfoque = cv2.GaussianBlur(gris, (5, 5), 0)
+    bordes = cv2.Canny(desenfoque, 80, 180)
+    bordes_dilatados = cv2.dilate(bordes, None, iterations=15)
+    return imagen, gris, bordes, bordes_dilatados
+
+# Detectar contornos
+def detectar_contornos(bordes_dilatados, imagen_original):
+    contornos, _ = cv2.findContours(bordes_dilatados.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    imagen_contornos = imagen_original.copy()
+    cv2.drawContours(imagen_contornos, contornos, -1, (0, 255, 0), 2)
+    return contornos, imagen_contornos
+
+# Clasificar monedas y guardar índices de recortes descartados
+def clasificar_monedas_y_descartar(contornos, bordes, imagen):
     recortes = []
-    for i, contour in enumerate(contours):
-        x, y, w, h = cv2.boundingRect(contour)
-        recorte = image[y:y+h, x:x+w]
+    indices_descartados = []
+    conteo_monedas = {"1 peso": 0, "50 centavos": 0, "10 centavos": 0}
+
+    for i, contorno in enumerate(contornos):
+        # Recortar el contorno
+        x, y, w, h = cv2.boundingRect(contorno)
+        recorte = bordes[y:y+h, x:x+w]
         recortes.append(recorte)
-        
-        # Mostrar cada recorte
-        plt.figure()
-        plt.imshow(cv2.cvtColor(recorte, cv2.COLOR_BGR2RGB))
-        plt.title(f"Recorte del Contorno {i + 1}")
-        plt.axis("off")
-        plt.show()
-    return recortes
 
-def clasificar_y_calcular_fp(recorte_procesado):
-    """Clasifica el recorte procesado en moneda o dado y muestra el factor de forma (Fp) de cada contorno."""
-    
-    # Encontrar contornos en la imagen procesada
-    contours, _ = cv2.findContours(recorte_procesado, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Lista para almacenar los factores de forma de cada contorno
-    fps = []
-    
-    # Iterar sobre los contornos detectados
-    for contour in contours:
-        # Calcular el área y el perímetro del contorno
-        area = cv2.contourArea(contour)
-        perimeter = cv2.arcLength(contour, True)
-        
-        # Evitar divisiones por cero
-        if perimeter == 0:
-            continue
-        
-        # Calcular el factor de forma (Fp)
-        factor_forma = area / (perimeter ** 2)
-        fps.append(factor_forma)
-        
-        # Clasificación basada en el factor de forma
-        if factor_forma > 0.07:  # Umbral para objetos circulares (monedas)
-            tipo_objeto = "Moneda"
+        # Detectar círculos (monedas)
+        circles = cv2.HoughCircles(
+            recorte,
+            cv2.HOUGH_GRADIENT,
+            dp=1.2,
+            minDist=250,
+            param1=100,
+            param2=65,
+            minRadius=30,
+            maxRadius=recorte.shape[0] // 2
+        )
+
+        # Procesar círculos detectados
+        if circles is not None:
+            circles = np.round(circles[0, :]).astype("int")
+            recorte_color = cv2.cvtColor(recorte, cv2.COLOR_GRAY2BGR)
+            for (cx, cy, r) in circles:
+                # Dibujar círculos en el recorte
+                cv2.circle(recorte_color, (cx, cy), r, (0, 255, 0), 2)
+                area = np.pi * r**2
+
+                # Clasificar según el área
+                if 65000 <= area <= 89000:
+                    conteo_monedas["1 peso"] += 1
+                elif area > 90000:
+                    conteo_monedas["50 centavos"] += 1
+                elif 50000 <= area <= 62000:
+                    conteo_monedas["10 centavos"] += 1
+
+            mostrar_imagen(cv2.cvtColor(recorte_color, cv2.COLOR_BGR2RGB), f"Recorte {i+1}: Círculo Detectado")
+            print(f"Recorte {i+1}: Centro=({cx}, {cy}), Radio={r}, Área={area:.2f}")
         else:
-            tipo_objeto = "Dado"
-        
-        # Mostrar el resultado
-        print(f"Factor de Forma (Fp) para el objeto: {factor_forma:.4f} - Clasificación: {tipo_objeto}")
-    
-    return fps
+            # Si no es moneda, se descarta para ser procesado como dado
+            indices_descartados.append(i)
+            print(f"Recorte {i+1}: No se detectaron círculos (posible dado).")
 
-def distinguir_moneda(recorte_moneda):
-    """Distingue el tipo de moneda por tamaño usando el área del contorno."""
-    # Convertir a escala de grises
-    gray = cv2.cvtColor(recorte_moneda, cv2.COLOR_BGR2GRAY)
-    
-    # Aplicar desenfoque
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    
-    # Detectar contornos
-    _, thresholded = cv2.threshold(blurred, 127, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(thresholded, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Calcular el área del contorno más grande (debería ser el de la moneda)
-    areas = [cv2.contourArea(c) for c in contours]
-    max_area = max(areas) if areas else 0
-    
-    # Clasificar según el área (umbral de ejemplo)
-    if max_area > 2000:
-        return "Moneda Grande"
-    elif max_area > 1000:
-        return "Moneda Mediana"
-    else:
-        return "Moneda Pequeña"
-def aplicar_apertura_clausura(image, kernel_size=(5, 5)):
-    """Aplica apertura seguida de clausura a la imagen para mejorar la calidad de los bordes."""
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, kernel_size)
-    
-    # Aplicar apertura (reduce el ruido)
-    apertura = cv2.morphologyEx(image, cv2.MORPH_OPEN, kernel)
-    
-    # Aplicar clausura (cierra pequeños huecos en los bordes)
-    clausura = cv2.morphologyEx(apertura, cv2.MORPH_CLOSE, kernel)
-    
-    return clausura
+    # Imprimir el conteo final de monedas y calcular el valor total
+    print("\nConteo Final de Monedas:")
+    valor_total = 0  # Inicializar el valor total de las monedas
+    for tipo, cantidad in conteo_monedas.items():
+        valor = 0
+        if tipo == "1 peso":
+            valor = 1.0
+        elif tipo == "50 centavos":
+            valor = 0.5
+        elif tipo == "10 centavos":
+            valor = 0.1
+        valor_total += cantidad * valor
+        print(f"{tipo}: {cantidad}")
 
-def contar_regiones_internas(image):
-    """Cuenta las regiones internas en un dado."""
-    contours, _ = cv2.findContours(image, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    # Contar solo los contornos internos (hijos)
-    return sum(1 for i in range(len(contours)) if _[0, i, 3] != -1)
+    print(f"\nLa suma total de las monedas es: ${valor_total:.2f} pesos")
 
-def clasificar_recorte(recorte, index):
-    """Clasifica el recorte como moneda o dado y cuenta las regiones internas si es un dado."""
-    # Convertir el recorte a escala de grises y aplicar binarización
-    gray = convertir_a_grises(recorte)
-    _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # Aplicar dilatación para conectar puntos dispersos en el caso de los dados
-    thresh_dilated = cv2.dilate(thresh, None, iterations=2)
-    
-    # Encontrar contornos
-    contours, _ = cv2.findContours(thresh_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    if not contours:
-        print(f"Recorte {index + 1}: No se detectaron contornos.")
-        return "Desconocido"
-    
-    # Clasificar usando el factor de forma (Fp)
-    tipo_objeto = clasificar_y_calcular_fp(thresh_dilated)
-    
-    # Clasificación de dado: contar las regiones internas
-    if tipo_objeto == "Dado":
-        regiones_internas = contar_regiones_internas(thresh)
-        print(f"Recorte {index + 1}: Clasificación: {tipo_objeto}, Regiones internas: {regiones_internas}")
-    else:
-        print(f"Recorte {index + 1}: Clasificación: {tipo_objeto}")
-    
-    return tipo_objeto
-
-# Código de procesamiento de la imagen y detección de bordes (sin cambios)
-image_path = "archivos/monedas.jpg"
-image = cargar_imagen(image_path)
-gray_image = convertir_a_grises(image)
-blurred_image = aplicar_desenfoque(gray_image)
-edges = detectar_bordes(blurred_image)
-dilated_edges = dilatar_bordes(edges)
-
-# Aplicar apertura y clausura
-processed_edges = aplicar_apertura_clausura(dilated_edges)
-
-# Mostrar las etapas de procesamiento
-fig, ax = plt.subplots(1, 4, figsize=(20, 5))
-ax[0].imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-ax[0].set_title("Imagen Original")
-ax[0].axis("off")
-
-ax[1].imshow(gray_image, cmap='gray')
-ax[1].set_title("Imagen en Escala de Grises")
-ax[1].axis("off")
-
-ax[2].imshow(edges, cmap='gray')
-ax[2].set_title("Bordes Detectados (Canny)")
-ax[2].axis("off")
-
-ax[3].imshow(processed_edges, cmap='gray')
-ax[3].set_title("Bordes con Apertura y Clausura")
-ax[3].axis("off")
-
-plt.tight_layout()
-plt.show()
-
-# Detectar y dibujar contornos en la imagen procesada
-contours = detectar_contornos(processed_edges)
-contour_image = dibujar_contornos(processed_edges, contours)
-mostrar_contornos(contour_image)
-
-# Recortar y mostrar cada contorno
-recortes = recortar_contornos(processed_edges, contours)
-
-# Mostrar el número total de objetos detectados
-print(f"Número total de objetos detectados: {len(contours)}")
-
-# Clasificar cada recorte
-for i, recorte in enumerate(recortes):
-    tipo_objeto = clasificar_recorte(recorte, i)
-    
-    if tipo_objeto == "Moneda":
-        tipo_moneda = distinguir_moneda(recorte)
-        print(f"Objeto {i + 1}: {tipo_objeto} - {tipo_moneda}")
-    elif tipo_objeto == "Dado":
-        print(f"Objeto {i + 1}: {tipo_objeto}")
-    else:
-        print(f"Objeto {i + 1}: No clasificado")
+    return recortes, conteo_monedas, indices_descartados
 
 
-# 11 y 19 son los dados
+# Procesar dados (solo recortes descartados)
+def procesar_dados(indices_descartados, recortes, kernel_apertura, kernel_cierre):
+    resultados_dados = []
+    for i in indices_descartados:
+        recorte = recortes[i]
+        recorte_morfo = cv2.morphologyEx(recorte, cv2.MORPH_OPEN, kernel_apertura)
+        recorte_morfo = cv2.morphologyEx(recorte_morfo, cv2.MORPH_CLOSE, kernel_cierre)
+
+        # Detectar puntos (caras de dados)
+        circles = cv2.HoughCircles(
+            recorte_morfo,
+            cv2.HOUGH_GRADIENT,
+            dp=1.2,
+            minDist=80,
+            param1=80,
+            param2=30,
+            minRadius=5,
+            maxRadius=50
+        )
+
+        if circles is not None:
+            circles = np.round(circles[0, :]).astype("int")
+            recorte_color = cv2.cvtColor(recorte_morfo, cv2.COLOR_GRAY2BGR)
+            for (x, y, r) in circles:
+                cv2.circle(recorte_color, (x, y), r, (0, 255, 0), 2)
+            resultados_dados.append((i, len(circles)))
+            mostrar_imagen(cv2.cvtColor(recorte_color, cv2.COLOR_BGR2RGB), f"Dado {i+1}: {len(circles)} puntos")
+            print(f"Dado {i+1}: La cara del dado tiene {len(circles)} puntos.")
+        else:
+            print(f"Dado {i+1}: No se detectaron puntos.")
+
+    return resultados_dados
+
+# --- Ejecución del Código ---
+ruta_imagen = 'archivos/monedas.jpg'
+imagen, gris, bordes, bordes_dilatados = cargar_imagen(ruta_imagen)
+
+mostrar_imagenes(
+    [cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB), gris, bordes],
+    ["Imagen Original", "Escala de Grises", "Bordes Detectados (Canny)"],
+    cmap='gray'
+)
+
+contornos, imagen_contornos = detectar_contornos(bordes_dilatados, imagen)
+mostrar_imagen(cv2.cvtColor(imagen_contornos, cv2.COLOR_BGR2RGB), "Contornos Detectados")
+print(f"Total de objetos detectados: {len(contornos)}")
+
+recortes, conteo_monedas, indices_descartados = clasificar_monedas_y_descartar(contornos, bordes, imagen)
+
+kernel_apertura = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (1, 1))
+kernel_cierre = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (6, 6))
+resultados_dados = procesar_dados(indices_descartados, recortes, kernel_apertura, kernel_cierre)
