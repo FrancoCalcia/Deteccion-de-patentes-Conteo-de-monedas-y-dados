@@ -52,7 +52,7 @@ O utiliza Docker para ejecutar el proyecto en un entorno aislado.
 ### Clona el repositorio en la carpeta que elijas.
 
    ```bash
-   git clone https://github.com/FrancoCalcia/PDI1-TP2-TUIA-Avecilla-Calcia.git
+   git clone https://github.com/FrancoCalcia/Deteccion-de-patentes-Conteo-de-monedas-y-dados.git
    cd PDI1-TP2-TUIA-Avecilla-Calcia
    ```
 
